@@ -137,17 +137,30 @@ function initEventListeners() {
  */
 async function checkLibraries() {
     try {
+        console.log('Prüfe Bibliotheken...');
         const response = await fetch('api.php?action=check_libraries');
-        const data = await response.json();
+        console.log('Response Status:', response.status);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const text = await response.text();
+        console.log('Response Text:', text);
+
+        const data = JSON.parse(text);
+        console.log('Parsed Data:', data);
 
         if (data.success) {
             libraries = data.libraries;
             displayLibraryStatus();
             updateLibraryDropdown();
+        } else {
+            throw new Error(data.error || 'Unbekannter Fehler');
         }
     } catch (error) {
         console.error('Fehler beim Prüfen der Bibliotheken:', error);
-        libraryStatus.innerHTML = '<p class="error">Fehler beim Prüfen der Bibliotheken</p>';
+        libraryStatus.innerHTML = `<p class="error">Fehler beim Prüfen der Bibliotheken: ${error.message}</p>`;
     }
 }
 
@@ -375,14 +388,9 @@ function updateExportOptions() {
     const resolutionGroup = document.getElementById('resolution-group');
     const backgroundGroup = document.getElementById('background-group');
 
-    // SVG benötigt keine Auflösung
-    if (format === 'svg') {
-        resolutionGroup.style.display = 'none';
-        backgroundGroup.style.display = 'none';
-    } else {
-        resolutionGroup.style.display = 'block';
-        backgroundGroup.style.display = 'block';
-    }
+    // Alle Formate zeigen Auflösung und Hintergrund-Optionen
+    resolutionGroup.style.display = 'block';
+    backgroundGroup.style.display = 'block';
 }
 
 /**
@@ -413,6 +421,17 @@ async function performExport() {
     confirmExport.disabled = true;
 
     try {
+        // SVG-Export direkt im Browser
+        if (format === 'svg') {
+            exportSVGDirectly(width, height, background, backgroundColor);
+            setTimeout(() => {
+                closeExportDialog();
+                confirmExport.disabled = false;
+            }, 500);
+            return;
+        }
+
+        // Andere Formate über Server
         const formData = new FormData();
         formData.append('action', 'export');
         formData.append('animation_data', JSON.stringify(currentAnimationData));
@@ -453,6 +472,50 @@ async function performExport() {
         showError(error.message);
         confirmExport.disabled = false;
     }
+}
+
+/**
+ * SVG direkt im Browser exportieren
+ */
+function exportSVGDirectly(width, height, background, backgroundColor) {
+    // SVG-Element aus der Animation holen
+    const svgElement = lottiePlayer.querySelector('svg');
+    if (!svgElement) {
+        showError('Kein SVG-Element gefunden');
+        return;
+    }
+
+    // SVG klonen und Attribute setzen
+    const svgClone = svgElement.cloneNode(true);
+    svgClone.setAttribute('width', width || originalWidth);
+    svgClone.setAttribute('height', height || originalHeight);
+
+    // Hintergrund hinzufügen falls gewünscht
+    if (background === 'color') {
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('width', '100%');
+        rect.setAttribute('height', '100%');
+        rect.setAttribute('fill', backgroundColor);
+        svgClone.insertBefore(rect, svgClone.firstChild);
+    }
+
+    // SVG in String konvertieren
+    const serializer = new XMLSerializer();
+    let svgString = serializer.serializeToString(svgClone);
+
+    // XML-Header hinzufügen
+    svgString = '<?xml version="1.0" encoding="UTF-8"?>\n' + svgString;
+
+    // Download erstellen
+    const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `lottie_frame_${currentFrame}.svg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
 
 /**

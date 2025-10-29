@@ -41,11 +41,12 @@ function checkLibraries() {
     // GD Library prüfen
     $gdAvailable = extension_loaded('gd');
     if ($gdAvailable) {
+        $gdVersion = defined('GD_VERSION') ? GD_VERSION : phpversion('gd');
         $libraries['gd'] = [
             'name' => 'GD Library',
             'available' => true,
             'formats' => ['png', 'jpg'],
-            'version' => GD_VERSION
+            'version' => $gdVersion ?: 'installiert'
         ];
     } else {
         $libraries['gd'] = [
@@ -57,14 +58,18 @@ function checkLibraries() {
     }
 
     // ImageMagick Command Line prüfen
-    $convertPath = trim(shell_exec('which convert 2>/dev/null'));
+    $convertPath = '';
+    if (function_exists('shell_exec') && !in_array('shell_exec', array_map('trim', explode(',', ini_get('disable_functions'))))) {
+        $convertPath = trim(@shell_exec('which convert 2>/dev/null') ?: '');
+    }
+
     if (!empty($convertPath)) {
-        $version = trim(shell_exec('convert -version 2>/dev/null | head -n1'));
+        $version = trim(@shell_exec('convert -version 2>/dev/null | head -n1') ?: '');
         $libraries['imagemagick_cli'] = [
             'name' => 'ImageMagick (CLI)',
             'available' => true,
             'formats' => ['png', 'jpg', 'gif'],
-            'version' => $version,
+            'version' => $version ?: 'installiert',
             'path' => $convertPath
         ];
     } else {
@@ -76,7 +81,16 @@ function checkLibraries() {
         ];
     }
 
-    // Chrome/Chromium für SVG-Export und Screenshot prüfen
+    // Browser (für SVG-Export - immer verfügbar)
+    $libraries['browser'] = [
+        'name' => 'Browser (SVG)',
+        'available' => true,
+        'formats' => ['svg'],
+        'version' => 'Client-Side',
+        'description' => 'SVG wird direkt im Browser exportiert'
+    ];
+
+    // Chrome/Chromium für Screenshot-basierte Exporte
     $chromePaths = [
         '/usr/bin/google-chrome',
         '/usr/bin/chromium',
@@ -93,11 +107,14 @@ function checkLibraries() {
     }
 
     if ($chromePath) {
-        $version = trim(shell_exec("$chromePath --version 2>/dev/null"));
+        $version = 'installiert';
+        if (function_exists('shell_exec') && !in_array('shell_exec', array_map('trim', explode(',', ini_get('disable_functions'))))) {
+            $version = trim(@shell_exec("$chromePath --version 2>/dev/null") ?: 'installiert');
+        }
         $libraries['chrome'] = [
             'name' => 'Chrome/Chromium',
             'available' => true,
-            'formats' => ['png', 'jpg', 'svg'],
+            'formats' => ['png', 'jpg'],
             'version' => $version,
             'path' => $chromePath
         ];
@@ -105,7 +122,7 @@ function checkLibraries() {
         $libraries['chrome'] = [
             'name' => 'Chrome/Chromium',
             'available' => false,
-            'formats' => ['png', 'jpg', 'svg'],
+            'formats' => ['png', 'jpg'],
             'install_instructions' => getChromeInstructions()
         ];
     }
