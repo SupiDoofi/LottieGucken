@@ -32,7 +32,7 @@ Ein PHP-basiertes Web-Tool zum Laden, Anzeigen und Exportieren von Lottie-Animat
 
 Für optimale Funktionalität sollten folgende Bibliotheken installiert sein:
 
-#### 1. Chrome/Chromium (empfohlen für beste Qualität)
+#### 1. Chrome/Chromium (nur für GIF-Export)
 ```bash
 # Ubuntu/Debian
 sudo apt-get install chromium-browser
@@ -43,6 +43,10 @@ sudo yum install chromium
 # macOS
 brew install --cask google-chrome
 ```
+
+**Hinweis:** Chrome wird nur für GIF-Export benötigt. SVG, PNG und JPG funktionieren ohne Chrome direkt im Browser.
+
+**Server-Umgebungen:** Das Script verwendet spezielle Headless-Flags (`--no-sandbox`, `--disable-dev-shm-usage`, etc.), um Chrome auch in eingeschränkten Umgebungen ohne Desktop-Session oder DBus zu betreiben.
 
 #### 2. ImageMagick (für Bildkonvertierung)
 ```bash
@@ -201,10 +205,12 @@ Diese Werte können in der `.htaccess` oder `php.ini` angepasst werden.
 - Stellen Sie sicher, dass `exports/` beschreibbar ist: `chmod 755 exports`
 - Erhöhen Sie `memory_limit` in `php.ini` bei sehr großen Animationen
 
-### "Screenshot-Erstellung fehlgeschlagen"
+### "Screenshot-Erstellung fehlgeschlagen" (GIF-Export)
 - Stellen Sie sicher, dass Chrome/Chromium installiert ist
 - Prüfen Sie den Pfad mit: `which chromium-browser` oder `which google-chrome`
 - Chrome benötigt ggf. zusätzliche Dependencies: `sudo apt-get install libnss3`
+- Bei DBus-Fehlern: Die zusätzlichen Headless-Flags (--no-sandbox, etc.) sollten diese unterdrücken
+- **Hinweis:** PNG und JPG funktionieren ohne Chrome direkt im Browser
 
 ### Animation wird nicht angezeigt
 - Prüfen Sie die Browser-Konsole auf JavaScript-Fehler

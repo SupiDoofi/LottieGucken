@@ -427,15 +427,31 @@ function exportToRaster($htmlFile, $tempId, $tempDir, $format, $library, $width,
         $outputFile = $tempDir . $tempId . '.' . $format;
         $screenshotFile = $tempDir . $tempId . '_chrome.png';
 
+        // Hintergrundfarbe für Chrome vorbereiten (Hex RGBA)
+        $chromeBackground = '00000000'; // Transparent
+        if ($background === 'color') {
+            // Konvertiere Hex-Farbe zu RGBA
+            $bgColorHex = ltrim($bgColor, '#');
+            $chromeBackground = $bgColorHex . 'FF'; // Volle Deckkraft
+        }
+
         // Screenshot mit Chrome erstellen
-        // Wichtig: --window-size und --force-device-scale-factor für korrekte Größe
+        // Zusätzliche Flags für Headless-Kompatibilität auf Servern
         $cmd = escapeshellcmd($chromePath) .
                ' --headless=new' .
                ' --disable-gpu' .
+               ' --no-sandbox' .
+               ' --disable-dev-shm-usage' .
+               ' --disable-software-rasterizer' .
+               ' --disable-extensions' .
+               ' --disable-setuid-sandbox' .
+               ' --no-first-run' .
+               ' --no-zygote' .
+               ' --single-process' .
                ' --hide-scrollbars' .
                ' --window-size=' . $width . ',' . $height .
                ' --force-device-scale-factor=1' .
-               ' --default-background-color=0' .
+               ' --default-background-color=' . $chromeBackground .
                ' --screenshot=' . escapeshellarg($screenshotFile) .
                ' --virtual-time-budget=5000' .
                ' ' . escapeshellarg('file://' . $htmlFile) . ' 2>&1';
