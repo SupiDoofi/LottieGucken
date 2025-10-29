@@ -276,13 +276,13 @@ function exportFrame() {
                 $outputFile = exportToSVG($htmlFile, $tempId, $tempDir);
                 break;
             case 'png':
-                $outputFile = exportToRaster($htmlFile, $tempId, $tempDir, 'png', $library, $width, $height);
+                $outputFile = exportToRaster($htmlFile, $tempId, $tempDir, 'png', $library, $width, $height, $background, $bgColor);
                 break;
             case 'jpg':
-                $outputFile = exportToRaster($htmlFile, $tempId, $tempDir, 'jpg', $library, $width, $height);
+                $outputFile = exportToRaster($htmlFile, $tempId, $tempDir, 'jpg', $library, $width, $height, $background, $bgColor);
                 break;
             case 'gif':
-                $outputFile = exportToRaster($htmlFile, $tempId, $tempDir, 'gif', $library, $width, $height);
+                $outputFile = exportToRaster($htmlFile, $tempId, $tempDir, 'gif', $library, $width, $height, $background, $bgColor);
                 break;
             default:
                 throw new Exception('Ungültiges Format');
@@ -405,7 +405,7 @@ function exportToSVG($htmlFile, $tempId, $tempDir) {
 /**
  * Export als Rasterbild (PNG, JPG, GIF)
  */
-function exportToRaster($htmlFile, $tempId, $tempDir, $format, $library, $width, $height) {
+function exportToRaster($htmlFile, $tempId, $tempDir, $format, $library, $width, $height, $background = 'transparent', $bgColor = '#ffffff') {
     $libraries = checkLibraries();
 
     // Automatische Bibliotheksauswahl
@@ -458,8 +458,22 @@ function exportToRaster($htmlFile, $tempId, $tempDir, $format, $library, $width,
 
         exec($cmd, $output, $returnCode);
 
+        // Debug-Informationen
+        $debugInfo = [
+            'command' => $cmd,
+            'return_code' => $returnCode,
+            'output' => $output,
+            'screenshot_file' => $screenshotFile,
+            'file_exists' => file_exists($screenshotFile)
+        ];
+
         if (!file_exists($screenshotFile)) {
-            throw new Exception('Screenshot-Erstellung fehlgeschlagen: ' . implode("\n", $output));
+            // Detaillierte Fehlermeldung
+            $errorMsg = "Screenshot-Erstellung fehlgeschlagen.\n\n";
+            $errorMsg .= "Return Code: " . $returnCode . "\n";
+            $errorMsg .= "Screenshot-Datei: " . $screenshotFile . "\n\n";
+            $errorMsg .= "Chrome-Ausgabe:\n" . implode("\n", $output);
+            throw new Exception($errorMsg);
         }
 
         // Bildgröße prüfen und ggf. zuschneiden/skalieren
