@@ -314,14 +314,18 @@ function createRenderHTML($animationData, $frame, $width, $height, $background, 
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=$width, height=$height">
+    <meta name="viewport" content="width=$width, height=$height, initial-scale=1.0">
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        html, body {
+        html {
+            width: {$width}px;
+            height: {$height}px;
+        }
+        body {
             width: {$width}px;
             height: {$height}px;
             margin: 0;
@@ -329,6 +333,7 @@ function createRenderHTML($animationData, $frame, $width, $height, $background, 
             background: $bgStyle;
             overflow: hidden;
             position: relative;
+            display: block;
         }
         #lottie {
             position: absolute;
@@ -336,23 +341,32 @@ function createRenderHTML($animationData, $frame, $width, $height, $background, 
             left: 0;
             width: {$width}px !important;
             height: {$height}px !important;
+            display: block;
         }
         #lottie svg {
+            display: block;
             width: {$width}px !important;
             height: {$height}px !important;
+            max-width: none !important;
+            max-height: none !important;
         }
-        /* Marker für Chrome: Rendering abgeschlossen */
-        body::after {
-            content: 'ready';
-            position: absolute;
-            top: -9999px;
-            left: -9999px;
+        /* Sichtbarer Marker, wenn Rendering abgeschlossen */
+        #ready-marker {
+            position: fixed;
+            bottom: 0;
+            right: 0;
+            width: 1px;
+            height: 1px;
+            background: transparent;
+            opacity: 0;
+            pointer-events: none;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
 </head>
 <body>
     <div id="lottie"></div>
+    <div id="ready-marker"></div>
     <script>
         var animationData = $animationJson;
         var animation = lottie.loadAnimation({
@@ -360,16 +374,39 @@ function createRenderHTML($animationData, $frame, $width, $height, $background, 
             renderer: 'svg',
             loop: false,
             autoplay: false,
-            animationData: animationData
+            animationData: animationData,
+            rendererSettings: {
+                preserveAspectRatio: 'xMidYMid meet',
+                clearCanvas: false,
+                progressiveLoad: false,
+                hideOnTransparent: true
+            }
         });
 
         // Warte auf vollständiges Laden, dann zum Frame springen
         animation.addEventListener('DOMLoaded', function() {
+            // Frame setzen
             animation.goToAndStop($frame, true);
 
-            // Marker setzen, dass Rendering fertig ist
-            document.body.setAttribute('data-ready', 'true');
+            // Warte zusätzlich, damit alle SVG-Elemente vollständig gerendert sind
+            setTimeout(function() {
+                // Marker setzen, dass Rendering fertig ist
+                document.body.setAttribute('data-ready', 'true');
+                document.getElementById('ready-marker').style.opacity = '1';
+
+                // Console-Log für Debugging
+                console.log('Rendering complete');
+            }, 500);
         });
+
+        // Fallback: Setze Ready-Status nach 2 Sekunden
+        setTimeout(function() {
+            if (!document.body.getAttribute('data-ready')) {
+                document.body.setAttribute('data-ready', 'true');
+                document.getElementById('ready-marker').style.opacity = '1';
+                console.log('Rendering complete (fallback)');
+            }
+        }, 2000);
     </script>
 </body>
 </html>
@@ -437,6 +474,9 @@ function exportToRaster($htmlFile, $tempId, $tempDir, $format, $library, $width,
 
         // Screenshot mit Chrome erstellen
         // Optimierte Flags für stabile Headless-Ausführung auf Servern
+        // Viewport größer als Window-Size für vollständige Erfassung
+        $viewportHeight = $height + 100; // Extra-Puffer für vollständige Erfassung
+
         $cmd = escapeshellcmd($chromePath) .
                ' --headless=new' .
                ' --disable-gpu' .
@@ -450,12 +490,14 @@ function exportToRaster($htmlFile, $tempId, $tempDir, $format, $library, $width,
                ' --no-first-run' .
                ' --disable-features=VizDisplayCompositor' .
                ' --hide-scrollbars' .
-               ' --window-size=' . $width . ',' . $height .
+               ' --window-size=' . $width . ',' . $viewportHeight .
                ' --force-device-scale-factor=1' .
+               ' --force-color-profile=srgb' .
                ' --default-background-color=' . $chromeBackground .
                ' --screenshot=' . escapeshellarg($screenshotFile) .
-               ' --virtual-time-budget=5000' .
-               ' --timeout=10000' .
+               ' --virtual-time-budget=10000' .
+               ' --timeout=15000' .
+               ' --run-all-compositor-stages-before-draw' .
                ' ' . escapeshellarg('file://' . $htmlFile) . ' 2>&1';
 
         exec($cmd, $output, $returnCode);
@@ -478,22 +520,45 @@ function exportToRaster($htmlFile, $tempId, $tempDir, $format, $library, $width,
             throw new Exception($errorMsg);
         }
 
-        // Bildgröße prüfen und ggf. zuschneiden/skalieren
+        // Bildgröße prüfen und auf gewünschte Größe zuschneiden
         $actualSize = getimagesize($screenshotFile);
         if ($actualSize) {
             $actualWidth = $actualSize[0];
             $actualHeight = $actualSize[1];
 
-            // Wenn die Größe nicht stimmt, versuche mit ImageMagick zu korrigieren
-            if (($actualWidth != $width || $actualHeight != $height) && $libraries['imagick']['available']) {
+            // Bild IMMER auf gewünschte Größe zuschneiden, da wir mit Puffer arbeiten
+            if ($libraries['imagick']['available']) {
                 try {
                     $image = new Imagick($screenshotFile);
-                    $image->cropImage($width, $height, 0, 0);
-                    $image->setImagePage($width, $height, 0, 0);
+
+                    // Crop auf gewünschte Größe (von oben links)
+                    if ($actualWidth >= $width && $actualHeight >= $height) {
+                        $image->cropImage($width, $height, 0, 0);
+                        $image->setImagePage($width, $height, 0, 0);
+                    }
+
                     $image->writeImage($screenshotFile);
                     $image->clear();
                 } catch (Exception $e) {
                     // Fehler ignorieren, weitermachen mit aktuellem Screenshot
+                }
+            } elseif ($libraries['gd']['available']) {
+                // Fallback: GD Library für Zuschneiden
+                try {
+                    $source = imagecreatefrompng($screenshotFile);
+                    $cropped = imagecreatetruecolor($width, $height);
+
+                    // Transparenz erhalten
+                    imagealphablending($cropped, false);
+                    imagesavealpha($cropped, true);
+
+                    imagecopy($cropped, $source, 0, 0, 0, 0, $width, $height);
+                    imagepng($cropped, $screenshotFile);
+
+                    imagedestroy($source);
+                    imagedestroy($cropped);
+                } catch (Exception $e) {
+                    // Fehler ignorieren
                 }
             }
         }
