@@ -165,11 +165,14 @@ LottieGucken/
 
 ### Unterstützte Export-Bibliotheken
 
-| Bibliothek | Formate | Qualität | Performance |
-|------------|---------|----------|-------------|
-| Chrome/Chromium | PNG, JPG, SVG | Excellent | Gut |
-| ImageMagick (PHP) | PNG, JPG, GIF | Sehr gut | Sehr gut |
-| GD Library | PNG, JPG | Gut | Excellent |
+| Bibliothek | Formate | Qualität | Performance | Hinweis |
+|------------|---------|----------|-------------|---------|
+| Browser (Canvas) | PNG, JPG, SVG | Excellent | Excellent | **Standard** - keine Installation nötig |
+| Chrome/Chromium | GIF | Sehr gut | Gut | Optional für GIF-Export |
+| ImageMagick (PHP) | PNG, JPG, GIF | Sehr gut | Sehr gut | Optional für Formatkonvertierung |
+| GD Library | PNG, JPG | Gut | Excellent | Optional für Formatkonvertierung |
+
+**Empfehlung:** Für die meisten Anwendungsfälle ist keine zusätzliche Bibliothek erforderlich. SVG, PNG und JPG werden direkt im Browser exportiert und funktionieren ohne Server-Abhängigkeiten.
 
 ### Dateigrößen-Limits
 

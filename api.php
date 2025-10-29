@@ -81,16 +81,16 @@ function checkLibraries() {
         ];
     }
 
-    // Browser (für SVG-Export - immer verfügbar)
+    // Browser (für Canvas-basierten Export - immer verfügbar)
     $libraries['browser'] = [
-        'name' => 'Browser (SVG)',
+        'name' => 'Browser (Canvas)',
         'available' => true,
-        'formats' => ['svg'],
+        'formats' => ['svg', 'png', 'jpg'],
         'version' => 'Client-Side',
-        'description' => 'SVG wird direkt im Browser exportiert'
+        'description' => 'Export wird direkt im Browser durchgeführt'
     ];
 
-    // Chrome/Chromium für Screenshot-basierte Exporte
+    // Chrome/Chromium für GIF-Export (optional)
     $chromePaths = [
         '/usr/bin/google-chrome',
         '/usr/bin/chromium',
@@ -114,15 +114,16 @@ function checkLibraries() {
         $libraries['chrome'] = [
             'name' => 'Chrome/Chromium',
             'available' => true,
-            'formats' => ['png', 'jpg'],
+            'formats' => ['gif'],
             'version' => $version,
-            'path' => $chromePath
+            'path' => $chromePath,
+            'description' => 'Optional für GIF-Export'
         ];
     } else {
         $libraries['chrome'] = [
             'name' => 'Chrome/Chromium',
             'available' => false,
-            'formats' => ['png', 'jpg'],
+            'formats' => ['gif'],
             'install_instructions' => getChromeInstructions()
         ];
     }
@@ -179,8 +180,11 @@ function getImageMagickCLIInstructions() {
  */
 function getChromeInstructions() {
     return [
-        'title' => 'Chrome/Chromium installieren',
+        'title' => 'Chrome/Chromium installieren (optional für GIF-Export)',
         'steps' => [
+            '<strong>Hinweis:</strong> Chrome wird nur für GIF-Export benötigt.',
+            'SVG, PNG und JPG funktionieren ohne Chrome im Browser.',
+            '',
             'Ubuntu/Debian: <code>sudo apt-get install chromium-browser</code>',
             'CentOS/RHEL: <code>sudo yum install chromium</code>',
             'macOS: <code>brew install --cask google-chrome</code>',
@@ -310,16 +314,39 @@ function createRenderHTML($animationData, $frame, $width, $height, $background, 
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=$width, height=$height">
     <style>
-        body {
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            width: {$width}px;
+            height: {$height}px;
             margin: 0;
             padding: 0;
             background: $bgStyle;
             overflow: hidden;
+            position: relative;
         }
         #lottie {
-            width: {$width}px;
-            height: {$height}px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: {$width}px !important;
+            height: {$height}px !important;
+        }
+        #lottie svg {
+            width: {$width}px !important;
+            height: {$height}px !important;
+        }
+        /* Marker für Chrome: Rendering abgeschlossen */
+        body::after {
+            content: 'ready';
+            position: absolute;
+            top: -9999px;
+            left: -9999px;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
@@ -335,7 +362,14 @@ function createRenderHTML($animationData, $frame, $width, $height, $background, 
             autoplay: false,
             animationData: animationData
         });
-        animation.goToAndStop($frame, true);
+
+        // Warte auf vollständiges Laden, dann zum Frame springen
+        animation.addEventListener('DOMLoaded', function() {
+            animation.goToAndStop($frame, true);
+
+            // Marker setzen, dass Rendering fertig ist
+            document.body.setAttribute('data-ready', 'true');
+        });
     </script>
 </body>
 </html>
@@ -394,16 +428,42 @@ function exportToRaster($htmlFile, $tempId, $tempDir, $format, $library, $width,
         $screenshotFile = $tempDir . $tempId . '_chrome.png';
 
         // Screenshot mit Chrome erstellen
+        // Wichtig: --window-size und --force-device-scale-factor für korrekte Größe
         $cmd = escapeshellcmd($chromePath) .
-               ' --headless --disable-gpu' .
+               ' --headless=new' .
+               ' --disable-gpu' .
+               ' --hide-scrollbars' .
                ' --window-size=' . $width . ',' . $height .
+               ' --force-device-scale-factor=1' .
+               ' --default-background-color=0' .
                ' --screenshot=' . escapeshellarg($screenshotFile) .
+               ' --virtual-time-budget=5000' .
                ' ' . escapeshellarg('file://' . $htmlFile) . ' 2>&1';
 
         exec($cmd, $output, $returnCode);
 
         if (!file_exists($screenshotFile)) {
             throw new Exception('Screenshot-Erstellung fehlgeschlagen: ' . implode("\n", $output));
+        }
+
+        // Bildgröße prüfen und ggf. zuschneiden/skalieren
+        $actualSize = getimagesize($screenshotFile);
+        if ($actualSize) {
+            $actualWidth = $actualSize[0];
+            $actualHeight = $actualSize[1];
+
+            // Wenn die Größe nicht stimmt, versuche mit ImageMagick zu korrigieren
+            if (($actualWidth != $width || $actualHeight != $height) && $libraries['imagick']['available']) {
+                try {
+                    $image = new Imagick($screenshotFile);
+                    $image->cropImage($width, $height, 0, 0);
+                    $image->setImagePage($width, $height, 0, 0);
+                    $image->writeImage($screenshotFile);
+                    $image->clear();
+                } catch (Exception $e) {
+                    // Fehler ignorieren, weitermachen mit aktuellem Screenshot
+                }
+            }
         }
 
         // Format konvertieren falls nötig

@@ -431,7 +431,17 @@ async function performExport() {
             return;
         }
 
-        // Andere Formate über Server
+        // PNG/JPG/GIF: Canvas-basierter Export (Browser)
+        if (format === 'png' || format === 'jpg') {
+            await exportViaCanvas(format, width, height, background, backgroundColor);
+            setTimeout(() => {
+                closeExportDialog();
+                confirmExport.disabled = false;
+            }, 500);
+            return;
+        }
+
+        // GIF: Über Server
         const formData = new FormData();
         formData.append('action', 'export');
         formData.append('animation_data', JSON.stringify(currentAnimationData));
@@ -516,6 +526,96 @@ function exportSVGDirectly(width, height, background, backgroundColor) {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+}
+
+/**
+ * Export via Canvas (PNG/JPG)
+ */
+async function exportViaCanvas(format, width, height, background, backgroundColor) {
+    return new Promise((resolve, reject) => {
+        try {
+            // SVG-Element aus der Animation holen
+            const svgElement = lottiePlayer.querySelector('svg');
+            if (!svgElement) {
+                throw new Error('Kein SVG-Element gefunden');
+            }
+
+            // SVG klonen und Attribute setzen
+            const svgClone = svgElement.cloneNode(true);
+            svgClone.setAttribute('width', width);
+            svgClone.setAttribute('height', height);
+            svgClone.setAttribute('viewBox', `0 0 ${originalWidth} ${originalHeight}`);
+            svgClone.setAttribute('preserveAspectRatio', 'none');
+
+            // Hintergrund hinzufügen falls gewünscht
+            if (background === 'color') {
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('x', '0');
+                rect.setAttribute('y', '0');
+                rect.setAttribute('width', originalWidth);
+                rect.setAttribute('height', originalHeight);
+                rect.setAttribute('fill', backgroundColor);
+                svgClone.insertBefore(rect, svgClone.firstChild);
+            }
+
+            // SVG in String konvertieren
+            const serializer = new XMLSerializer();
+            const svgString = serializer.serializeToString(svgClone);
+
+            // SVG als Data URL
+            const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+            const svgUrl = URL.createObjectURL(svgBlob);
+
+            // Image erstellen und laden
+            const img = new Image();
+            img.onload = function() {
+                try {
+                    // Canvas erstellen
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+
+                    // Hintergrund füllen falls nötig
+                    if (background === 'color' || format === 'jpg') {
+                        ctx.fillStyle = background === 'color' ? backgroundColor : '#ffffff';
+                        ctx.fillRect(0, 0, width, height);
+                    }
+
+                    // Bild auf Canvas zeichnen
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // URL freigeben
+                    URL.revokeObjectURL(svgUrl);
+
+                    // Als Blob konvertieren und herunterladen
+                    canvas.toBlob(function(blob) {
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `lottie_frame_${currentFrame}.${format}`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+                        resolve();
+                    }, format === 'jpg' ? 'image/jpeg' : 'image/png', 0.95);
+                } catch (error) {
+                    URL.revokeObjectURL(svgUrl);
+                    reject(error);
+                }
+            };
+
+            img.onerror = function() {
+                URL.revokeObjectURL(svgUrl);
+                reject(new Error('Fehler beim Laden des SVG-Bildes'));
+            };
+
+            img.src = svgUrl;
+        } catch (error) {
+            reject(error);
+        }
+    });
 }
 
 /**
