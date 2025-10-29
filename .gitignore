@@ -1,0 +1,35 @@
+# Lottie Animation Exporter - Git Ignore
+
+# Upload-Verzeichnis (temporäre Dateien)
+uploads/*
+!uploads/.gitkeep
+
+# Export-Verzeichnis (generierte Dateien)
+exports/*
+!exports/.gitkeep
+
+# PHP
+*.log
+error_log
+
+# System-Dateien
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE-spezifisch
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Backup-Dateien
+*~
+*.bak
+*.swp
+*.swo
+
+# Temporäre Dateien
+tmp/
+temp/
+*.tmp
