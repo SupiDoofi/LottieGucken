@@ -436,7 +436,7 @@ function exportToRaster($htmlFile, $tempId, $tempDir, $format, $library, $width,
         }
 
         // Screenshot mit Chrome erstellen
-        // Zusätzliche Flags für Headless-Kompatibilität auf Servern
+        // Optimierte Flags für stabile Headless-Ausführung auf Servern
         $cmd = escapeshellcmd($chromePath) .
                ' --headless=new' .
                ' --disable-gpu' .
@@ -445,15 +445,17 @@ function exportToRaster($htmlFile, $tempId, $tempDir, $format, $library, $width,
                ' --disable-software-rasterizer' .
                ' --disable-extensions' .
                ' --disable-setuid-sandbox' .
+               ' --disable-crash-reporter' .
+               ' --disable-breakpad' .
                ' --no-first-run' .
-               ' --no-zygote' .
-               ' --single-process' .
+               ' --disable-features=VizDisplayCompositor' .
                ' --hide-scrollbars' .
                ' --window-size=' . $width . ',' . $height .
                ' --force-device-scale-factor=1' .
                ' --default-background-color=' . $chromeBackground .
                ' --screenshot=' . escapeshellarg($screenshotFile) .
                ' --virtual-time-budget=5000' .
+               ' --timeout=10000' .
                ' ' . escapeshellarg('file://' . $htmlFile) . ' 2>&1';
 
         exec($cmd, $output, $returnCode);
