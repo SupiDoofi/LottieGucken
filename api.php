@@ -215,11 +215,23 @@ function handleUpload() {
 
     // Bei .tgs: Dekomprimieren
     if ($extension === 'tgs') {
+        $fileSize = filesize($file['tmp_name']);
         $decompressed = decompressTGS($file['tmp_name']);
         if ($decompressed === false) {
-            throw new Exception('Fehler beim Dekomprimieren der .tgs-Datei. Die Datei könnte beschädigt oder nicht im gzip-Format sein.');
+            // Debug-Information hinzufügen
+            $debugInfo = [
+                'original_size' => $fileSize,
+                'tmp_path' => $file['tmp_name'],
+                'file_exists' => file_exists($file['tmp_name']),
+                'readable' => is_readable($file['tmp_name'])
+            ];
+            throw new Exception('Fehler beim Dekomprimieren der .tgs-Datei (' . $fileSize . ' Bytes). Debug: ' . json_encode($debugInfo));
         }
+        $decompressedSize = strlen($decompressed);
         file_put_contents($targetPath, $decompressed);
+
+        // Log für erfolgreiche Dekomprimierung
+        error_log("TGS dekomprimiert: $fileSize Bytes -> $decompressedSize Bytes");
     } else {
         if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
             throw new Exception('Fehler beim Hochladen der Datei');
@@ -243,76 +255,129 @@ function handleUpload() {
 
 /**
  * Dekomprimiert TGS-Datei mit mehreren Fallback-Methoden
+ * TGS-Dateien sind mit gzip komprimiert, aber größere Dateien brauchen Stream-Verarbeitung
  */
 function decompressTGS($filePath) {
-    $compressed = file_get_contents($filePath);
+    $fileSize = @filesize($filePath);
+    error_log("TGS-Dekomprimierung startet für Datei: $filePath ($fileSize Bytes)");
+
+    // WICHTIG: Für große Dateien zuerst Stream-Methode verwenden
+    // Verhindert Memory-Probleme bei file_get_contents()
+
+    // Methode 1: Stream-basierte Dekomprimierung (BESTE für große Dateien)
+    error_log("Versuche Methode 1: gzopen Stream");
+    try {
+        $gz = @gzopen($filePath, 'rb');
+        if ($gz !== false) {
+            $decompressed = '';
+            $chunkSize = 8192; // 8 KB Chunks für bessere Performance
+            $readBytes = 0;
+
+            while (!gzeof($gz)) {
+                $chunk = gzread($gz, $chunkSize);
+                if ($chunk === false) {
+                    error_log("Fehler beim gzread bei $readBytes Bytes");
+                    gzclose($gz);
+                    break; // Fehler beim Lesen, versuche nächste Methode
+                }
+                $decompressed .= $chunk;
+                $readBytes += strlen($chunk);
+            }
+            gzclose($gz);
+
+            if (!empty($decompressed) && strlen($decompressed) > 0) {
+                error_log("gzopen erfolgreich: " . strlen($decompressed) . " Bytes dekomprimiert");
+                // Prüfe ob es gültiges JSON ist
+                $test = @json_decode($decompressed);
+                if ($test !== null) {
+                    error_log("JSON-Validierung erfolgreich - Methode 1 funktioniert!");
+                    return $decompressed;
+                } else {
+                    error_log("JSON-Validierung fehlgeschlagen: " . json_last_error_msg());
+                }
+            } else {
+                error_log("gzopen lieferte leere Ausgabe");
+            }
+        } else {
+            error_log("gzopen fehlgeschlagen");
+        }
+    } catch (Exception $e) {
+        error_log("Methode 1 Exception: " . $e->getMessage());
+    }
+
+    // Ab hier nur noch für kleine Dateien - lade in Memory
+    $compressed = @file_get_contents($filePath);
 
     if ($compressed === false || empty($compressed)) {
         return false;
     }
 
-    // Methode 1: gzdecode (Standard)
+    // Methode 2: gzdecode (Standard für kleinere Dateien)
     $decompressed = @gzdecode($compressed);
-    if ($decompressed !== false) {
-        return $decompressed;
-    }
-
-    // Methode 2: gzinflate (für deflate-komprimierte Dateien)
-    $decompressed = @gzinflate($compressed);
-    if ($decompressed !== false) {
-        return $decompressed;
-    }
-
-    // Methode 3: gzuncompress (für compress-Format)
-    $decompressed = @gzuncompress($compressed);
-    if ($decompressed !== false) {
-        return $decompressed;
-    }
-
-    // Methode 4: Stream-basierte Dekomprimierung (für große Dateien)
-    try {
-        $tempFile = tempnam(sys_get_temp_dir(), 'tgs_');
-        file_put_contents($tempFile, $compressed);
-
-        // Versuche mit zlib-Stream zu dekomprimieren
-        $gz = @gzopen($tempFile, 'rb');
-        if ($gz !== false) {
-            $decompressed = '';
-            while (!gzeof($gz)) {
-                $decompressed .= gzread($gz, 4096);
-            }
-            gzclose($gz);
-            @unlink($tempFile);
-
-            if (!empty($decompressed)) {
-                return $decompressed;
-            }
+    if ($decompressed !== false && !empty($decompressed)) {
+        $test = @json_decode($decompressed);
+        if ($test !== null) {
+            return $decompressed;
         }
-
-        @unlink($tempFile);
-    } catch (Exception $e) {
-        // Ignorieren und weitermachen
     }
 
-    // Methode 5: Prüfe ob die Datei bereits unkomprimiert ist (JSON)
-    // Manche "TGS"-Dateien sind bereits entpackte JSON-Dateien
+    // Methode 3: gzinflate (deflate ohne gzip-Header)
+    $decompressed = @gzinflate($compressed);
+    if ($decompressed !== false && !empty($decompressed)) {
+        $test = @json_decode($decompressed);
+        if ($test !== null) {
+            return $decompressed;
+        }
+    }
+
+    // Methode 4: gzuncompress (compress-Format)
+    $decompressed = @gzuncompress($compressed);
+    if ($decompressed !== false && !empty($decompressed)) {
+        $test = @json_decode($decompressed);
+        if ($test !== null) {
+            return $decompressed;
+        }
+    }
+
+    // Methode 5: Prüfe ob bereits entpackt (JSON)
     $jsonTest = @json_decode($compressed);
     if ($jsonTest !== null && json_last_error() === JSON_ERROR_NONE) {
-        return $compressed; // Datei ist bereits JSON
+        return $compressed;
     }
 
-    // Methode 6: Versuche mit substr, falls gzip-Header falsch ist
-    // TGS sollte mit 1f 8b beginnen (gzip magic bytes)
+    // Methode 6: Manuelles Header-Parsing
     if (strlen($compressed) > 10) {
         $magic = bin2hex(substr($compressed, 0, 2));
 
         if ($magic === '1f8b') {
-            // Gzip-Header gefunden, versuche manuelles Dekomprimieren
-            // Überspringe gzip-Header und verwende inflate
+            // Gzip-Header gefunden, überspringe Header
             $decompressed = @gzinflate(substr($compressed, 10));
-            if ($decompressed !== false) {
-                return $decompressed;
+            if ($decompressed !== false && !empty($decompressed)) {
+                $test = @json_decode($decompressed);
+                if ($test !== null) {
+                    return $decompressed;
+                }
             }
+
+            // Versuche mit verschiedenen Header-Offsets
+            for ($offset = 10; $offset <= 20; $offset++) {
+                $decompressed = @gzinflate(substr($compressed, $offset));
+                if ($decompressed !== false && !empty($decompressed)) {
+                    $test = @json_decode($decompressed);
+                    if ($test !== null) {
+                        return $decompressed;
+                    }
+                }
+            }
+        }
+    }
+
+    // Methode 7: Zlib-Dekomprimierung mit verschiedenen Modi
+    $decompressed = @gzinflate(substr($compressed, 2)); // Skip 2-byte header
+    if ($decompressed !== false && !empty($decompressed)) {
+        $test = @json_decode($decompressed);
+        if ($test !== null) {
+            return $decompressed;
         }
     }
 

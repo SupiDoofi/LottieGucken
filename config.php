@@ -15,6 +15,18 @@ if (DEBUG_MODE) {
     ini_set('display_errors', 0);
 }
 
+// Memory-Limit erhöhen für große TGS-Dateien
+// TGS-Dateien können nach Dekomprimierung deutlich größer werden
+$currentMemoryLimit = ini_get('memory_limit');
+$requiredMemory = 256; // MB
+
+if ($currentMemoryLimit !== '-1') {
+    $currentMemoryMB = intval($currentMemoryLimit);
+    if ($currentMemoryMB < $requiredMemory) {
+        @ini_set('memory_limit', $requiredMemory . 'M');
+    }
+}
+
 // Verzeichnis-Pfade
 define('UPLOAD_DIR', __DIR__ . '/uploads/');
 define('EXPORT_DIR', __DIR__ . '/exports/');
