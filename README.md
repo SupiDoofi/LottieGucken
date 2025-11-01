@@ -126,7 +126,10 @@ sudo systemctl restart nginx
 ### 1. Animation laden
 
 - Klicken Sie auf den Upload-Bereich oder ziehen Sie eine Datei per Drag & Drop
-- Unterstützte Formate: `.json` (Standard Lottie) und `.tgs` (Telegram Sticker)
+- Unterstützte Formate:
+  - `.json` (Standard Lottie-Format)
+  - `.tgs` (Telegram Sticker - gzip-komprimiert)
+- TGS-Dateien werden automatisch dekomprimiert (unterstützt verschiedene Komprimierungsmethoden)
 - Die Animation wird automatisch geladen und angezeigt
 
 ### 2. Animation steuern
@@ -216,6 +219,13 @@ Diese Werte können in der `.htaccess` oder `php.ini` angepasst werden.
 - Prüfen Sie die Browser-Konsole auf JavaScript-Fehler
 - Stellen Sie sicher, dass die Lottie-Web-Library geladen wurde
 - Testen Sie mit einer bekannten funktionierenden Lottie-Datei
+
+### "Fehler beim Dekomprimieren der .tgs-Datei"
+- Das Script versucht automatisch 6 verschiedene Dekomprimierungsmethoden
+- Stellen Sie sicher, dass die TGS-Datei nicht beschädigt ist
+- Versuchen Sie die Datei mit einem anderen Tool zu dekomprimieren und als .json hochzuladen
+- Prüfen Sie, ob die PHP zlib-Extension installiert ist: `php -m | grep zlib`
+- Bei sehr großen Dateien: Erhöhen Sie `memory_limit` in php.ini
 
 ## Browser-Kompatibilität
 

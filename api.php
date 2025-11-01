@@ -215,10 +215,9 @@ function handleUpload() {
 
     // Bei .tgs: Dekomprimieren
     if ($extension === 'tgs') {
-        $compressed = file_get_contents($file['tmp_name']);
-        $decompressed = gzdecode($compressed);
+        $decompressed = decompressTGS($file['tmp_name']);
         if ($decompressed === false) {
-            throw new Exception('Fehler beim Dekomprimieren der .tgs-Datei');
+            throw new Exception('Fehler beim Dekomprimieren der .tgs-Datei. Die Datei könnte beschädigt oder nicht im gzip-Format sein.');
         }
         file_put_contents($targetPath, $decompressed);
     } else {
@@ -240,6 +239,84 @@ function handleUpload() {
         'file' => $fileName,
         'animation_data' => $jsonData
     ];
+}
+
+/**
+ * Dekomprimiert TGS-Datei mit mehreren Fallback-Methoden
+ */
+function decompressTGS($filePath) {
+    $compressed = file_get_contents($filePath);
+
+    if ($compressed === false || empty($compressed)) {
+        return false;
+    }
+
+    // Methode 1: gzdecode (Standard)
+    $decompressed = @gzdecode($compressed);
+    if ($decompressed !== false) {
+        return $decompressed;
+    }
+
+    // Methode 2: gzinflate (für deflate-komprimierte Dateien)
+    $decompressed = @gzinflate($compressed);
+    if ($decompressed !== false) {
+        return $decompressed;
+    }
+
+    // Methode 3: gzuncompress (für compress-Format)
+    $decompressed = @gzuncompress($compressed);
+    if ($decompressed !== false) {
+        return $decompressed;
+    }
+
+    // Methode 4: Stream-basierte Dekomprimierung (für große Dateien)
+    try {
+        $tempFile = tempnam(sys_get_temp_dir(), 'tgs_');
+        file_put_contents($tempFile, $compressed);
+
+        // Versuche mit zlib-Stream zu dekomprimieren
+        $gz = @gzopen($tempFile, 'rb');
+        if ($gz !== false) {
+            $decompressed = '';
+            while (!gzeof($gz)) {
+                $decompressed .= gzread($gz, 4096);
+            }
+            gzclose($gz);
+            @unlink($tempFile);
+
+            if (!empty($decompressed)) {
+                return $decompressed;
+            }
+        }
+
+        @unlink($tempFile);
+    } catch (Exception $e) {
+        // Ignorieren und weitermachen
+    }
+
+    // Methode 5: Prüfe ob die Datei bereits unkomprimiert ist (JSON)
+    // Manche "TGS"-Dateien sind bereits entpackte JSON-Dateien
+    $jsonTest = @json_decode($compressed);
+    if ($jsonTest !== null && json_last_error() === JSON_ERROR_NONE) {
+        return $compressed; // Datei ist bereits JSON
+    }
+
+    // Methode 6: Versuche mit substr, falls gzip-Header falsch ist
+    // TGS sollte mit 1f 8b beginnen (gzip magic bytes)
+    if (strlen($compressed) > 10) {
+        $magic = bin2hex(substr($compressed, 0, 2));
+
+        if ($magic === '1f8b') {
+            // Gzip-Header gefunden, versuche manuelles Dekomprimieren
+            // Überspringe gzip-Header und verwende inflate
+            $decompressed = @gzinflate(substr($compressed, 10));
+            if ($decompressed !== false) {
+                return $decompressed;
+            }
+        }
+    }
+
+    return false;
 }
 
 /**
